@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Miva Techies Flashcards</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background-color: #0B1120; }
+        .type-cursor::after { content: '|'; animation: blink 1s step-start infinite; }
+        @keyframes blink { 50% { opacity: 0; } }
+        #transition-overlay { backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+        @keyframes flashBright {
+            0%, 100% { background-color: #10b981; box-shadow: 0 0 15px #10b981; }
+            50% { background-color: #34d399; box-shadow: 0 0 25px #34d399; }
+        }
+        .btn-flash { animation: flashBright 1.5s infinite; color: #022c22; font-weight: bold; }
+    </style>
+</head>
+<body class="text-white min-h-screen flex flex-col font-sans overflow-hidden">
+
+    <header class="p-6 flex items-center justify-between z-10">
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 bg-indigo-500 rounded-lg flex items-center justify-center font-bold text-xl shadow-lg cursor-pointer" onclick="clearCacheAndReload()">MT</div>
+            <h1 class="text-xl font-bold tracking-wider text-slate-200">MIVA TECHIES</h1>
+        </div>
+    </header>
+
+    <main class="flex-grow flex flex-col items-center justify-center p-6 relative z-10 w-full max-w-4xl mx-auto">
+        
+        <!-- View 1: Landing Page -->
+        <section id="view-landing" class="w-full flex flex-col items-center text-center space-y-12">
+            <h2 id="landing-text" class="text-4xl md:text-6xl font-extrabold leading-tight text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400 min-h-[150px]"></h2>
+            <button id="btn-get-started" class="px-8 py-4 rounded-full bg-slate-700 text-slate-400 text-lg transition-all duration-300 opacity-0 pointer-events-none" onclick="goToSelection()">Get Started</button>
+        </section>
+
+        <!-- View 2: Selection Section -->
+        <section id="view-selection" class="w-full flex flex-col items-center text-center space-y-10 hidden">
+            <h2 id="selection-text" class="text-3xl md:text-5xl font-bold text-blue-300 min-h-[60px]"></h2>
+            <div id="selection-menu" class="w-full max-w-md space-y-6 opacity-0 transition-opacity duration-1000 flex flex-col items-center">
+                <div class="w-full text-left">
+                    <label class="block text-sm font-medium text-slate-400 mb-2">Cohort / Level</label>
+                    <select id="select-level" class="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-emerald-500 outline-none transition disabled:opacity-50"></select>
+                </div>
+                <div class="w-full text-left">
+                    <label class="block text-sm font-medium text-slate-400 mb-2">Course</label>
+                    <select id="select-course" class="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-emerald-500 outline-none transition disabled:opacity-50" disabled></select>
+                </div>
+                <button id="btn-start-study" class="w-full py-4 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-bold text-lg transition shadow-[0_0_15px_rgba(16,185,129,0.4)] hidden" onclick="startStudy()">Load Flashcards</button>
+            </div>
+        </section>
+
+        <!-- View 3: Flashcards Carousel -->
+        <section id="view-flashcards" class="w-full h-full flex flex-col items-center justify-center hidden">
+            <div class="mb-6 text-center w-full">
+                <h3 id="current-course-title" class="text-2xl font-bold text-emerald-400"></h3>
+                <p id="card-counter" class="text-slate-400 mt-2 font-mono bg-slate-800 inline-block px-3 py-1 rounded-full text-sm"></p>
+            </div>
+            <div class="relative w-full max-w-2xl h-96 flex items-center justify-center">
+                <button onclick="prevCard()" class="hidden md:flex absolute -left-16 z-20 w-12 h-12 bg-slate-800 rounded-full items-center justify-center hover:bg-slate-700 transition hover:scale-110 text-emerald-400 border border-slate-600"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></button>
+                <div id="card-container" class="w-full h-full bg-slate-800 border-2 border-slate-700 rounded-2xl shadow-2xl p-8 md:p-12 flex items-center justify-center text-center overflow-hidden touch-pan-y relative">
+                    <p id="card-content" class="text-xl md:text-3xl font-medium leading-relaxed text-slate-100"></p>
+                </div>
+                <button onclick="nextCard()" class="hidden md:flex absolute -right-16 z-20 w-12 h-12 bg-slate-800 rounded-full items-center justify-center hover:bg-slate-700 transition hover:scale-110 text-emerald-400 border border-slate-600"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></button>
+            </div>
+        </section>
+
+    </main>
+
+    <footer class="p-6 text-center text-slate-500 text-sm z-10 border-t border-slate-800/50 flex flex-col items-center gap-2">
+        <div id="external-links" class="flex gap-4 text-emerald-400/80 mb-2 hidden">
+            <a href="#" class="hover:text-emerald-300 transition">AI MCQ Gen</a>
+            <span>|</span>
+            <a href="#" class="hover:text-emerald-300 transition">Meeting Summary</a>
+        </div>
+        <p>Built with <a href="admin.html" class="cursor-pointer hover:scale-110 inline-block transition">❤️</a> by Miva Techies</p>
+        <p class="opacity-70">© All rights reserved</p>
+    </footer>
+
+    <div id="transition-overlay" class="fixed inset-0 z-50 bg-slate-900/60 opacity-0 pointer-events-none transition-opacity duration-1000 flex items-center justify-center">
+        <div class="w-16 h-16 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
+    </div>
+
+    <script>
+        // Init mock DB in localStorage if it doesn't exist so admin page can edit it
+        const defaultDB = {
+            "200lvl_sem2": { name: "200lvl 2nd Semester", courses: { "csc204": { name: "CSC 204 - Statistical Computing", cards: ["Statistical computing is the interface between statistics and computer science.", "Inference is the process of drawing conclusions from data."] } } },
+            "100lvl_sem1": { name: "100lvl 1st Semester", courses: { "mth101": { name: "MTH 101 - Calculus I", cards: ["A derivative represents instantaneous rate of change."] } } }
+        };
+        if(!localStorage.getItem('mivaDB')) localStorage.setItem('mivaDB', JSON.stringify(defaultDB));
+        const mockDB = JSON.parse(localStorage.getItem('mivaDB'));
+
+        let currentCards = [], currentIndex = 0, activeCourseName = "", activeLevelId = "", activeCourseId = "";
+        const views = { landing: document.getElementById('view-landing'), selection: document.getElementById('view-selection'), flashcards: document.getElementById('view-flashcards') };
+        
+        function typeWriter(elementId, text, speed, onComplete) {
+            const el = document.getElementById(elementId);
+            el.innerHTML = ''; el.classList.add('type-cursor');
+            let i = 0;
+            function type() {
+                if (i < text.length) { el.innerHTML += text.charAt(i); i++; setTimeout(type, speed); } 
+                else { el.classList.remove('type-cursor'); if (onComplete) onComplete(); }
+            }
+            type();
+        }
+
+        function switchView(hideId, showId) {
+            views[hideId].classList.add('hidden');
+            views[showId].classList.remove('hidden');
+            if(showId !== 'landing') document.getElementById('external-links').classList.remove('hidden');
+        }
+
+        function saveState() {
+            if(activeCourseId) localStorage.setItem('mivaState', JSON.stringify({level: activeLevelId, course: activeCourseId, index: currentIndex}));
+        }
+
+        function clearCacheAndReload() {
+            localStorage.removeItem('mivaState');
+            location.reload();
+        }
+
+        window.onload = () => {
+            const savedState = localStorage.getItem('mivaState');
+            if(savedState) {
+                const state = JSON.parse(savedState);
+                if(mockDB[state.level] && mockDB[state.level].courses[state.course]) {
+                    activeLevelId = state.level; activeCourseId = state.course; currentIndex = state.index;
+                    const courseData = mockDB[state.level].courses[state.course];
+                    currentCards = courseData.cards; activeCourseName = courseData.name;
+                    switchView('landing', 'flashcards');
+                    updateCardUI();
+                    return;
+                }
+            }
+            setTimeout(() => {
+                typeWriter('landing-text', "welcome to the Miva Techies Flashcards Study Program, I am NYMO your guide, let's get started!", 80, () => {
+                    const btn = document.getElementById('btn-get-started');
+                    btn.classList.remove('opacity-0', 'pointer-events-none', 'bg-slate-700', 'text-slate-400');
+                    btn.classList.add('btn-flash', 'cursor-pointer');
+                });
+            }, 500);
+        };
+
+        window.goToSelection = () => {
+            switchView('landing', 'selection');
+            const levelSelect = document.getElementById('select-level');
+            levelSelect.innerHTML = '<option value="" disabled selected>Choose your level...</option>';
+            Object.keys(mockDB).forEach(key => {
+                levelSelect.innerHTML += `<option value="${key}">${mockDB[key].name}</option>`;
+            });
+            setTimeout(() => {
+                typeWriter('selection-text', "Please select your study details", 80, () => {
+                    document.getElementById('selection-menu').classList.remove('opacity-0');
+                });
+            }, 300);
+        };
+
+        document.getElementById('select-level').addEventListener('change', (e) => {
+            const courseSelect = document.getElementById('select-course');
+            courseSelect.innerHTML = '<option value="" disabled selected>Select a course...</option>';
+            courseSelect.disabled = false; document.getElementById('btn-start-study').classList.add('hidden');
+            const courses = mockDB[e.target.value].courses;
+            Object.keys(courses).forEach(key => {
+                courseSelect.innerHTML += `<option value="${key}" data-level="${e.target.value}">${courses[key].name}</option>`;
+            });
+        });
+
+        document.getElementById('select-course').addEventListener('change', () => {
+            const btn = document.getElementById('btn-start-study'); btn.classList.remove('hidden'); btn.disabled = false;
+        });
+
+        window.startStudy = () => {
+            const opt = document.getElementById('select-course').options[document.getElementById('select-course').selectedIndex];
+            activeCourseId = opt.value; activeLevelId = opt.dataset.level;
+            const courseData = mockDB[activeLevelId].courses[activeCourseId];
+            currentCards = courseData.cards; activeCourseName = courseData.name; currentIndex = 0;
+            saveState();
+
+            document.getElementById('transition-overlay').classList.remove('opacity-0', 'pointer-events-none');
+            setTimeout(() => {
+                switchView('selection', 'flashcards'); updateCardUI();
+                setTimeout(() => document.getElementById('transition-overlay').classList.add('opacity-0', 'pointer-events-none'), 500);
+            }, 2000);
+        };
+
+        function updateCardUI() {
+            document.getElementById('current-course-title').textContent = activeCourseName;
+            document.getElementById('card-counter').textContent = `${currentIndex + 1} / ${currentCards.length}`;
+            const contentEl = document.getElementById('card-content');
+            contentEl.style.opacity = '0';
+            setTimeout(() => {
+                contentEl.textContent = currentCards[currentIndex] || "No cards available.";
+                contentEl.style.opacity = '1'; contentEl.style.transition = 'opacity 0.2s ease-in';
+            }, 100);
+            saveState();
+        }
+
+        window.nextCard = () => { if (currentIndex < currentCards.length - 1) { currentIndex++; updateCardUI(); } };
+        window.prevCard = () => { if (currentIndex > 0) { currentIndex--; updateCardUI(); } };
+
+        let startX = 0;
+        const cardCont = document.getElementById('card-container');
+        cardCont.addEventListener('touchstart', e => startX = e.changedTouches[0].screenX, {passive: true});
+        cardCont.addEventListener('touchend', e => {
+            let endX = e.changedTouches[0].screenX;
+            if(startX - endX > 50) nextCard();
+            if(endX - startX > 50) prevCard();
+        }, {passive: true});
+    </script>
+</body>
+</html>

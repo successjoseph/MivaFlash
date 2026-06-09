@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Study Hub Admin</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background-color: #0B1120; }
+        .type-cursor::after { content: '|'; animation: blink 1s step-start infinite; }
+        @keyframes blink { 50% { opacity: 0; } }
+        .slide-down { animation: slideDown 0.4s ease-out forwards; }
+        @keyframes slideDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body class="text-white min-h-screen flex flex-col items-center justify-center p-6 font-sans">
+
+    <!-- Login View -->
+    <div id="login-view" class="w-full max-w-md text-center space-y-6">
+        <h1 class="text-3xl font-bold text-slate-200">Admin Portal</h1>
+        <input type="password" id="admin-pass" class="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-3 text-center text-white focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="Enter Password">
+        <p id="login-err" class="text-red-400 text-sm hidden">Access Denied.</p>
+        <button onclick="attemptLogin()" class="w-full py-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 font-bold transition">Login</button>
+        <a href="index.html" class="block text-sm text-slate-500 hover:text-slate-300 mt-4">← Back to App</a>
+    </div>
+
+    <!-- Dashboard View -->
+    <div id="dashboard-view" class="w-full max-w-2xl hidden flex flex-col items-center space-y-8">
+        <h2 id="nymo-greeting" class="text-3xl md:text-4xl font-bold text-emerald-400 min-h-[50px]"></h2>
+        
+        <div id="action-buttons" class="flex gap-4 opacity-0 transition-opacity duration-700">
+            <button onclick="setMode('add')" class="px-6 py-2 rounded bg-blue-600 hover:bg-blue-500 font-semibold transition">Add</button>
+            <button onclick="setMode('edit')" class="px-6 py-2 rounded bg-amber-600 hover:bg-amber-500 font-semibold transition">Edit</button>
+            <button onclick="setMode('delete')" class="px-6 py-2 rounded bg-red-600 hover:bg-red-500 font-semibold transition">Delete</button>
+        </div>
+
+        <!-- Dynamic Action Area -->
+        <div id="action-area" class="w-full bg-slate-800 p-6 rounded-xl border border-slate-700 min-h-[200px] hidden slide-down">
+            <!-- Injected by JS -->
+        </div>
+        <a href="index.html" class="block text-sm text-slate-500 hover:text-slate-300">← Back to App</a>
+    </div>
+
+    <!-- Custom Modal for Delete Warnings -->
+    <div id="custom-modal" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50">
+        <div class="bg-slate-800 p-6 rounded-lg max-w-sm border border-red-500 text-center">
+            <h3 class="text-xl font-bold text-red-500 mb-4">WARNING</h3>
+            <p id="modal-text" class="text-slate-300 mb-6"></p>
+            <div class="flex justify-center gap-4">
+                <button onclick="closeModal(false)" class="px-4 py-2 bg-slate-600 rounded hover:bg-slate-500">Cancel</button>
+                <button onclick="closeModal(true)" class="px-4 py-2 bg-red-600 rounded hover:bg-red-500 font-bold">I Understand</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Data Sync
+        if(!localStorage.getItem('mivaDB')) localStorage.setItem('mivaDB', JSON.stringify({"200lvl_sem2": { name: "200lvl 2nd Semester", courses: { "csc204": { name: "CSC 204", cards: ["Test Card"] } } }}));
+        let db = JSON.parse(localStorage.getItem('mivaDB'));
+        function saveDB() { localStorage.setItem('mivaDB', JSON.stringify(db)); alert("Saved successfully!"); renderMode(); }
+
+        // --- Gemini AI Logic ---
+        const apiKey = "";
+        
+        async function fetchGemini(prompt, schema = null) {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+            const payload = { contents: [{ parts: [{ text: prompt }] }] };
+            if (schema) {
+                payload.generationConfig = { responseMimeType: "application/json", responseSchema: schema };
+            }
+            
+            // Retry with exponential backoff
+            let retries = 5, delay = 1000;
+            while(retries > 0) {
+                try {
+                    const res = await fetch(url, { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload) });
+                    const data = await res.json();
+                    if(data.error) throw new Error(data.error.message);
+                    return data.candidates[0].content.parts[0].text;
+                } catch(e) {
+                    retries--;
+                    if(retries === 0) { alert("AI Error: " + e.message); return null; }
+                    await new Promise(r => setTimeout(r, delay)); delay *= 2;
+                }
+            }
+        }
+
+        async function generateFlashcardsAI(lvl, crs) {
+            const notes = document.getElementById('ai-notes-text').value;
+            if(!notes.trim()) return alert("Please paste some notes first!");
+            const btn = document.getElementById('ai-gen-btn');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = `<div class="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> Extracting...`;
+            btn.disabled = true;
+
+            const prompt = `Extract the most important facts, definitions, and theories from the following notes and convert them into an array of flashcard strings. Keep each flashcard concise and under 2 sentences. Notes: \n\n${notes}`;
+            const schema = { type: "ARRAY", items: { type: "STRING" }, description: "Array of extracted flashcard text" };
+            
+            const result = await fetchGemini(prompt, schema);
+            if(result) {
+                try {
+                    const cards = JSON.parse(result);
+                    if(cards.length > 0) {
+                        db[lvl].courses[crs].cards.push(...cards);
+                        saveDB();
+                    } else alert("No flashcards could be extracted.");
+                } catch(e) { alert("Failed to parse AI response."); }
+            }
+            btn.innerHTML = originalText; btn.disabled = false;
+        }
+
+        async function improveCardAI() {
+            const textArea = document.getElementById('edit-card-val');
+            if(!textArea.value.trim()) return;
+            const btn = document.getElementById('ai-improve-btn');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = `<div class="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>`;
+            btn.disabled = true;
+
+            const prompt = `Improve the following flashcard. Fix any typos, make it more concise, and ensure it is easy to understand for a student. Return ONLY the improved text, nothing else. \n\nFlashcard: ${textArea.value}`;
+            const result = await fetchGemini(prompt);
+            if(result) textArea.value = result.trim();
+            
+            btn.innerHTML = originalText; btn.disabled = false;
+        }
+
+        // Auth Logic (Password: "mivatechies")
+                const targetHash = "bWl2YXRlY2hpZXM="; // Base64 encoded
+
+                    function attemptLogin() {
+                    const val = document.getElementById('admin-pass').value;
+                    if(btoa(val) === targetHash) {
+                        document.getElementById('login-view').classList.add('hidden');
+                        document.getElementById('dashboard-view').classList.remove('hidden');
+                        typeNymoGreeting();
+                    } else {
+                        document.getElementById('login-err').classList.remove('hidden');
+                    }
+                    }
+
+        function typeNymoGreeting() {
+            const el = document.getElementById('nymo-greeting');
+            const txt = "Welcome admin what are we doing today";
+            el.innerHTML = ''; el.classList.add('type-cursor');
+            let i = 0;
+            function type() {
+                if(i < txt.length) { el.innerHTML += txt.charAt(i); i++; setTimeout(type, 70); }
+                else { el.classList.remove('type-cursor'); document.getElementById('action-buttons').classList.remove('opacity-0'); }
+            }
+            type();
+        }
+
+        // UI State
+        let currentMode = '';
+        function setMode(mode) {
+            currentMode = mode;
+            const area = document.getElementById('action-area');
+            area.classList.remove('hidden');
+            area.classList.remove('slide-down'); void area.offsetWidth; area.classList.add('slide-down'); // restart anim
+            renderMode();
+        }
+
+        // --- Core Logic & Rendering ---
+        function renderMode() {
+            const area = document.getElementById('action-area');
+            let html = `<h3 class="text-xl font-bold mb-4 capitalize text-slate-200">${currentMode} Data</h3>`;
+            
+            // Generate standard cohort select
+            let levelOpts = `<option value="" disabled selected>Select Folder (Cohort)</option>`;
+            Object.keys(db).forEach(k => levelOpts += `<option value="${k}">${db[k].name}</option>`);
+            if(currentMode === 'add') levelOpts += `<option value="NEW" class="text-emerald-400 font-bold">[+] Create New Folder</option>`;
+
+            html += `<select id="sel-lvl" class="w-full bg-slate-900 border border-slate-600 rounded p-2 mb-4" onchange="handleLevelChange()">${levelOpts}</select>`;
+            html += `<div id="dynamic-inputs"></div>`;
+            area.innerHTML = html;
+        }
+
+        function handleLevelChange() {
+            const lvl = document.getElementById('sel-lvl').value;
+            const dyn = document.getElementById('dynamic-inputs');
+            
+            if(lvl === 'NEW' && currentMode === 'add') {
+                dyn.innerHTML = `
+                    <input type="text" id="new-lvl-id" placeholder="Folder ID (e.g. 300lvl_sem1)" class="w-full bg-slate-900 border border-slate-600 rounded p-2 mb-2">
+                    <input type="text" id="new-lvl-name" placeholder="Folder Display Name" class="w-full bg-slate-900 border border-slate-600 rounded p-2 mb-4">
+                    <button onclick="createNewFolder()" class="bg-emerald-600 px-4 py-2 rounded font-bold">Create Folder</button>`;
+                return;
+            }
+
+            if(currentMode === 'delete') {
+                dyn.innerHTML = `<button onclick="execDelete('folder', '${lvl}')" class="w-full bg-red-600/20 text-red-500 border border-red-600 hover:bg-red-600 hover:text-white transition rounded p-2 mb-4">Delete Entire Folder</button>`;
+            } else if (currentMode === 'edit') {
+                dyn.innerHTML = `<input type="text" id="edit-lvl-name" value="${db[lvl].name}" class="w-full bg-slate-900 border border-slate-600 rounded p-2 mb-2"><button onclick="db['${lvl}'].name = document.getElementById('edit-lvl-name').value; saveDB();" class="bg-amber-600 px-4 py-1 rounded text-sm mb-4">Save Folder Name</button>`;
+            }
+
+            // Sub-folder select
+            let crsOpts = `<option value="" disabled selected>Select Sub-Folder (Course)</option>`;
+            Object.keys(db[lvl].courses).forEach(k => crsOpts += `<option value="${k}">${db[lvl].courses[k].name}</option>`);
+            if(currentMode === 'add') crsOpts += `<option value="NEW" class="text-emerald-400 font-bold">[+] Create New Sub-Folder</option>`;
+            
+            dyn.innerHTML += `<select id="sel-crs" class="w-full bg-slate-900 border border-slate-600 rounded p-2 mb-4" onchange="handleCourseChange()">${crsOpts}</select><div id="deep-inputs"></div>`;
+        }
+
+        function handleCourseChange() {
+            const lvl = document.getElementById('sel-lvl').value;
+            const crs = document.getElementById('sel-crs').value;
+            const deep = document.getElementById('deep-inputs');
+
+            if(crs === 'NEW' && currentMode === 'add') {
+                deep.innerHTML = `
+                    <input type="text" id="new-crs-id" placeholder="Course ID (e.g. csc301)" class="w-full bg-slate-900 border border-slate-600 rounded p-2 mb-2">
+                    <input type="text" id="new-crs-name" placeholder="Course Name" class="w-full bg-slate-900 border border-slate-600 rounded p-2 mb-4">
+                    <button onclick="createNewCourse('${lvl}')" class="bg-emerald-600 px-4 py-2 rounded font-bold">Create Sub-Folder</button>`;
+                return;
+            }
+
+            if(currentMode === 'add') {
+                deep.innerHTML = `
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
+                        <div class="bg-slate-900/50 p-4 rounded border border-slate-700">
+                            <h4 class="text-sm font-bold text-slate-300 mb-2">Manual Add</h4>
+                            <textarea id="new-card-text" placeholder="Type new flashcard content here..." class="w-full h-24 bg-slate-900 border border-slate-600 rounded p-2 mb-4 text-white"></textarea>
+                            <button onclick="addCard('${lvl}', '${crs}')" class="bg-blue-600 hover:bg-blue-500 w-full px-4 py-2 rounded font-bold transition">Add Flashcard</button>
+                        </div>
+                        <div class="bg-indigo-900/20 p-4 rounded border border-indigo-500/30">
+                            <h4 class="text-sm font-bold text-indigo-300 mb-2">✨ AI Batch Generate</h4>
+                            <textarea id="ai-notes-text" placeholder="Paste study notes, syllabus, or an article here..." class="w-full h-24 bg-slate-900 border border-indigo-500/50 rounded p-2 mb-4 text-white placeholder-indigo-300/50"></textarea>
+                            <button id="ai-gen-btn" onclick="generateFlashcardsAI('${lvl}', '${crs}')" class="bg-indigo-600 hover:bg-indigo-500 w-full px-4 py-2 rounded font-bold transition flex justify-center items-center gap-2">✨ Extract Flashcards</button>
+                        </div>
+                    </div>`;
+            } else if (currentMode === 'edit') {
+                deep.innerHTML = `<input type="text" id="edit-crs-name" value="${db[lvl].courses[crs].name}" class="w-full bg-slate-900 border border-slate-600 rounded p-2 mb-2 text-white"><button onclick="db['${lvl}'].courses['${crs}'].name = document.getElementById('edit-crs-name').value; saveDB();" class="bg-amber-600 hover:bg-amber-500 px-4 py-1 rounded text-sm mb-4 transition">Save Course Name</button>`;
+                
+                let cardOpts = `<option value="" disabled selected>Select Card to Edit</option>`;
+                db[lvl].courses[crs].cards.forEach((c, i) => cardOpts += `<option value="${i}">Card ${i+1}: ${c.substring(0,30)}...</option>`);
+                deep.innerHTML += `<select id="sel-crd" class="w-full bg-slate-900 border border-slate-600 rounded p-2 mb-4 text-white" onchange="showEditCard()">${cardOpts}</select><div id="card-edit-area"></div>`;
+            } else if (currentMode === 'delete') {
+                deep.innerHTML = `<button onclick="execDelete('course', '${lvl}', '${crs}')" class="w-full bg-red-600/20 text-red-500 border border-red-600 hover:bg-red-600 hover:text-white transition rounded p-2 mb-4">Delete Entire Course</button>`;
+                let cardOpts = `<option value="" disabled selected>Select Card to Delete</option>`;
+                db[lvl].courses[crs].cards.forEach((c, i) => cardOpts += `<option value="${i}">Card ${i+1}: ${c.substring(0,30)}...</option>`);
+                deep.innerHTML += `<select id="sel-crd" class="w-full bg-slate-900 border border-slate-600 rounded p-2 mb-4" onchange="execDelete('card', '${lvl}', '${crs}', this.value)">${cardOpts}</select>`;
+            }
+        }
+
+        // --- Data Mutations ---
+        function createNewFolder() {
+            const id = document.getElementById('new-lvl-id').value; const name = document.getElementById('new-lvl-name').value;
+            if(!id || !name) return alert("Fill all fields");
+            db[id] = { name: name, courses: {} }; saveDB();
+        }
+        function createNewCourse(lvl) {
+            const id = document.getElementById('new-crs-id').value; const name = document.getElementById('new-crs-name').value;
+            if(!id || !name) return alert("Fill all fields");
+            db[lvl].courses[id] = { name: name, cards: [] }; saveDB();
+        }
+        function addCard(lvl, crs) {
+            const text = document.getElementById('new-card-text').value;
+            if(!text) return alert("Card is empty");
+            db[lvl].courses[crs].cards.push(text); saveDB();
+        }
+        function showEditCard() {
+            const lvl = document.getElementById('sel-lvl').value; const crs = document.getElementById('sel-crs').value; const idx = document.getElementById('sel-crd').value;
+            document.getElementById('card-edit-area').innerHTML = `
+                <textarea id="edit-card-val" class="w-full h-24 bg-slate-900 border border-slate-600 rounded p-2 mb-4 text-white">${db[lvl].courses[crs].cards[idx]}</textarea>
+                <div class="flex gap-2">
+                    <button onclick="db['${lvl}'].courses['${crs}'].cards[${idx}] = document.getElementById('edit-card-val').value; saveDB();" class="bg-amber-600 hover:bg-amber-500 flex-1 px-4 py-2 rounded font-bold transition">Save Changes</button>
+                    <button id="ai-improve-btn" onclick="improveCardAI()" class="bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded font-bold transition flex justify-center items-center gap-2">✨ Enhance</button>
+                </div>`;
+        }
+
+        // --- Tiered Deletion Logic ---
+        let modalResolve = null;
+        function showModal(text) {
+            document.getElementById('modal-text').textContent = text;
+            document.getElementById('custom-modal').classList.replace('hidden', 'flex');
+            return new Promise(res => modalResolve = res);
+        }
+        function closeModal(result) {
+            document.getElementById('custom-modal').classList.replace('flex', 'hidden');
+            if(modalResolve) modalResolve(result);
+        }
+
+        async function execDelete(type, lvl, crs, idx) {
+            if(type === 'card') {
+                if(confirm("Delete this flashcard?")) {
+                    db[lvl].courses[crs].cards.splice(idx, 1); saveDB();
+                }
+            } else if (type === 'course') {
+                const step1 = await showModal(`You are about to delete the entire sub-folder: ${db[lvl].courses[crs].name}`);
+                if(!step1) return;
+                if(confirm(`Final check: Delete all cards in ${db[lvl].courses[crs].name}?`)) {
+                    delete db[lvl].courses[crs]; saveDB();
+                }
+            } else if (type === 'folder') {
+                const folderName = db[lvl].name;
+                const step1 = await showModal(`DANGER: You are about to delete the ENTIRE FOLDER (${folderName}) and ALL its courses.`);
+                if(!step1) return;
+                if(confirm("Are you absolutely sure? This cannot be undone.")) {
+                    const ans = prompt(`Type the folder name "${folderName}" to confirm deletion:`);
+                    if(ans === folderName) {
+                        delete db[lvl]; saveDB();
+                    } else {
+                        alert("Name did not match. Deletion aborted.");
+                    }
+                }
+            }
+        }
+    </script>
+</body>
+</html>
